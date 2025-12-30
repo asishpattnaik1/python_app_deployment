@@ -2,7 +2,7 @@
 #import  & config
 from typing import List, Optional
 from fastapi import FastAPI,HTTPException,Depends, status
-from pydantic import BaseModel, constr, Field, EmailStr  # <-- added EmailStr
+from pydantic import BaseModel, constr, Field
 from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, Text, text
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
 from datetime  import datetime
@@ -70,29 +70,6 @@ SessionLocal= sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base= declarative_base()
 
-# -------------------------
-# User ORM model (Lesson 2)
-# -------------------------
-class User(Base):
-    __tablename__ ="users"
-    id= Column(Integer, primary_key=True, index=True)
-    email= Column(String(320), unique=True, index=True, nullable=False)
-    username= Column(String(150), unique=True, index=True, nullable=False)
-    hashed_password= Column(String(255), nullable=False) # will store raw password for Lesson 2 (we'll add hashing next lesson)
-    is_active= Column(Boolean, default=True, nullable=False)
-    created_at= Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at= Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
-
-# -------------------------
-# Helper DB functions
-# -------------------------
-def get_user_by_username(db: Session, username: str) -> Optional[User]:
-    return db.query(User).filter((User.username== username)).first()
-
-def get_user_by_email(db: Session, email: str) -> Optional[User]:
-    return db.query(User).filter((User.email== email)).first()
-####################################################################
-
 #Database Models
 class Task(Base):
     __tablename__ = "tasks"
@@ -105,7 +82,7 @@ class Task(Base):
     updated_at= Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
 ####################################################################
-#pydantic schemas for Task
+#pydantic schemas
 # what are pydantic schemas
 #Pydantic schemas are data models defined using the Pydantic library in Python.
 #Pydantic is a data validation and settings management library that uses Python type annotations to define data structures.
@@ -144,35 +121,6 @@ class TaskListResponse(BaseModel):
     total: int
     skip: int
     limit: int
-
-# -------------------------
-# Pydantic schemas (User)
-# -------------------------
-
-class UserCreate(BaseModel):
-    email: EmailStr
-    username: constr(min_length=3, max_length=50)
-    password: constr(min_length=6, max_length=128)
-
-class UserResponse(BaseModel):
-    id: int
-    email: EmailStr
-    username: str
-    is_active: bool
-    created_at: datetime
-
-    # Pydantic v2: allow creating model from ORM objects / attributes
-    model_config = {"from_attributes": True}
-
-class UserLogin(BaseModel):
-    username: str
-    password: str
-
-class UserLoginResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-
-
 ####################################################################
 #dependency to get DB session
 # this function is a dependency that provides a database session for each request. One session per request: you avoid sharing a single Session across requests (prevents data corruption and concurrency bugs).
@@ -268,42 +216,6 @@ def health_check(db: Session = Depends(get_db)):
         return {"status": "ok", "database": "connected"}
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database connection error")
-
-
-####################################################################
-# Auth endpoints (Lesson 2)
-# - /auth/register : create a new user (no hashing yet)
-# - /auth/login    : validate credentials and return a placeholder token
-####################################################################
-# Register new user
-@app.post("/auth/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED, summary="Register a new user")
-def register_user(user_in: UserCreate, db: Session = Depends(get_db)):
-    # Check if username or email already exists
-    if get_user_by_username(db, user_in.username):
-        raise HTTPException(status_code= status.HTTP_400_BAD_REQUEST, detail="Username already registered")
-    if get_user_by_email(db, user_in.email):
-        raise HTTPException(status_code= status.HTTP_400_BAD_REQUEST, detail="Email already registered")
-    
-    # Create new user (storing raw password for Lesson 2)
-    user = User(
-        email= user_in.email,
-        username= user_in.username,
-        hashed_password= user_in.password  # In Lesson 3, we'll hash this password
-    )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    return user
-
-# Login user
-@app.post("/auth/login", response_model= UserLoginResponse,summary="Login and obtain access token")
-def login_user(user_in: UserLogin, db: Session = Depends(get_db)):
-    user= get_user_by_username(db, user_in.username)
-    if not user or user.hashed_password != user_in.password:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
-    # Return a placeholder token (in Lesson 3, we'll implement JWT)
-    return {"access_token":"fake-jwt-token-for-" + user.username, "token_type": "bearer"}
-
 
 ####################################################################
 #Task CRUD Endpoints

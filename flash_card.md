@@ -75,3 +75,61 @@
 - Lesson 2: Add User model + `/auth/register` and `/auth/login` (no hashing) — say "start lesson 2" to proceed.
 - I will append new lesson sections and related flashcards to this file as we progress.
 
+## Lesson 2 - Learning (User auth scaffold)
+
+- Added a simple User ORM model (SQLAlchemy) with fields:
+  - id, email, username, hashed_password (temporary raw), is_active, timestamps.
+- Added helper DB functions:
+  - get_user_by_username(db, username)
+  - get_user_by_email(db, email)
+- Added Pydantic schemas:
+  - UserCreate (email, username, password)
+  - UserResponse (id, email, username, is_active, created_at) — uses Pydantic v2 model_config={"from_attributes": True}
+  - UserLogin (username, password)
+  - UserLoginResponse (access_token, token_type)
+- Endpoints (no hashing / no JWT yet):
+  - POST /auth/register — registers user, checks uniqueness, stores password as-is (Lesson 3 will add hashing)
+  - POST /auth/login — verifies credentials and returns a placeholder token
+- Notes:
+  - Keep `.env` and DATABASE_URL correctly configured.
+  - Next lesson: replace raw password storage with passlib bcrypt and implement JWT tokens; then protect /tasks endpoints by current_user dependency.
+
+---
+
+## Lesson 2 - Flashcards (Q = front, A = back)
+
+1. Q: What new ORM model was added in Lesson 2?  
+   A: User model with id, email, username, hashed_password (temporary), is_active, created_at/updated_at.
+
+2. Q: Why have helper functions get_user_by_username / get_user_by_email?  
+   A: Encapsulate common DB lookups and keep route logic simple and testable.
+
+3. Q: What Pydantic schema validates registration input?  
+   A: UserCreate (EmailStr, username constr, password constr).
+
+4. Q: Why does UserResponse need model_config = {"from_attributes": True}?  
+   A: Pydantic v2 requires it to convert SQLAlchemy ORM objects (attribute access) into response models.
+
+5. Q: What does POST /auth/register do today?  
+   A: Validates uniqueness, creates a User record, and returns the user object (password stored raw for now).
+
+6. Q: What does POST /auth/login return today?  
+   A: A placeholder access token string (no real JWT yet).
+
+7. Q: What must be changed next for security?  
+   A: Hash passwords with bcrypt (passlib) and implement JWT tokens; do not store raw passwords.
+
+---
+
+## Quick test snippets
+
+- Register:
+  curl -X POST "http://localhost:8000/auth/register" -H "Content-Type: application/json" -d '{"email":"a@b.com","username":"me","password":"secret"}'
+
+- Login:
+  curl -X POST "http://localhost:8000/auth/login" -H "Content-Type: application/json" -d '{"username":"me","password":"secret"}'
+
+---
+
+## Next action
+- Proceed to Lesson 3: add password hashing (passlib) and verify login with hashed passwords. Say "start lesson 3" to continue.
