@@ -133,3 +133,53 @@
 
 ## Next action
 - Proceed to Lesson 3: add password hashing (passlib) and verify login with hashed passwords. Say "start lesson 3" to continue.
+
+## Lesson 3 - Learning (Password hashing)
+
+- Use passlib.CryptContext to hash & verify passwords; prefer Argon2id (or bcrypt).
+- Store only the hashed password (hash string contains algorithm, salt, params).
+- Use pwd_context.hash() on register and pwd_context.verify() on login.
+- Use pwd_context.needs_update() to detect old hashes and rehash on successful login.
+- Install required libs: pip install "passlib[bcrypt]" or pip install "passlib[argon2]" + argon2-cffi.
+- Consider a server-side pepper (secret in env/secret manager) for extra defense; handle rehashing & secrets carefully.
+- Always use HTTPS, rate limiting, and secure password reset flows.
+
+### Quick commands
+- Install:
+  - pip install "passlib[bcrypt]"
+  - or pip install "passlib[argon2]" argon2-cffi
+- Test hashing in REPL:
+  ```python
+  from passlib.context import CryptContext
+  pwd = CryptContext(schemes=["argon2","bcrypt"], deprecated="auto")
+  h = pwd.hash("secret")
+  print(h, pwd.verify("secret", h), pwd.verify("wrong", h))
+  ```
+
+---
+
+## Lesson 3 - Flashcards (Q = front, A = back)
+
+1. Q: What do you store in the DB for a password?  
+   A: Only the salted, slow hash string (contains algorithm, salt, params) — never plaintext.
+
+2. Q: Which library is recommended for hashing in Python?  
+   A: passlib (with Argon2 or bcrypt backends).
+
+3. Q: How do you hash a password before saving?  
+   A: Use pwd_context.hash(password) and save the returned string.
+
+4. Q: How do you verify a login password?  
+   A: Use pwd_context.verify(plain_password, stored_hash).
+
+5. Q: What is pwd_context.needs_update(stored_hash) used for?  
+   A: To detect hashes that use old params/algorithms so you can rehash and persist an updated hash after successful login.
+
+6. Q: Do you need to manage salts manually?  
+   A: No — modern schemes (Argon2/bcrypt) generate and store salts automatically in the hash string.
+
+7. Q: What is a "pepper"?  
+   A: An optional server-side secret combined with the password before hashing, stored outside the DB (env/secret manager) for extra security.
+
+8. Q: What operational protections accompany password hashing?  
+   A: Use HTTPS, account lockout/backoff, rate limiting, secure password reset, and secrets management for keys/peppers.

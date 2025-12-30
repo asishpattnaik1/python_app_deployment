@@ -8,7 +8,6 @@ from sqlalchemy.orm import sessionmaker, declarative_base, Session
 from datetime  import datetime
 import os
 from dotenv import load_dotenv, find_dotenv
-from passlib.context import CryptContext
 
 #load .env file if present
 env_path = find_dotenv() or ".env"
@@ -92,30 +91,6 @@ def get_user_by_username(db: Session, username: str) -> Optional[User]:
 
 def get_user_by_email(db: Session, email: str) -> Optional[User]:
     return db.query(User).filter((User.email== email)).first()
-####################################################################
-#lesson 3: password hashing functions
-####################################################################
-#passward hashing context
-"""Short answer: CryptContext with schemes=["argon2","bcrypt"] is valid and useful — passlib will use the first scheme (argon2) for new hashes, but can verify hashes produced by any listed scheme (bcrypt included). This lets you migrate algorithms smoothly.
-
-Details (concise)
-
-New hashes: created with the first scheme in the list (argon2 in your case).
-Verification: passlib detects the algorithm from the stored hash string and verifies with the correct backend.
-needs_update(): will return True for older hashes if their algorithm/params differ — use this to rehash on successful login and persist the new argon2 hash.
-Installation: both algorithm packages must be installed (argon2-cffi for Argon2, bcrypt for bcrypt) or import errors will occur.
-Migration pattern: keep both schemes, accept existing bcrypt hashes, and on login rehash to argon2 when pwd_context.needs_update(...) is True.
-Production note: prefer a single modern algorithm (Argon2id) long‑term; using multiple schemes is mainly for safe migrations/compatibility."""
-pwd_context = CryptContext(schemes=["argon2", "bcrypt"], deprecated="auto")
-
-#function to hash password
-def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
-
-#function to verify password
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
-
 ####################################################################
 
 #Database Models
@@ -310,11 +285,10 @@ def register_user(user_in: UserCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code= status.HTTP_400_BAD_REQUEST, detail="Email already registered")
     
     # Create new user (storing raw password for Lesson 2)
-    hashed_password = get_password_hash(user_in.password)  # Hash the password before storing
     user = User(
         email= user_in.email,
         username= user_in.username,
-        hashed_password= hashed_password
+        hashed_password= user_in.password  # In Lesson 3, we'll hash this password
     )
     db.add(user)
     db.commit()
@@ -325,7 +299,7 @@ def register_user(user_in: UserCreate, db: Session = Depends(get_db)):
 @app.post("/auth/login", response_model= UserLoginResponse,summary="Login and obtain access token")
 def login_user(user_in: UserLogin, db: Session = Depends(get_db)):
     user= get_user_by_username(db, user_in.username)
-    if not user or not verify_password(user_in.password, user.hashed_password):
+    if not user or user.hashed_password != user_in.password:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
     # Return a placeholder token (in Lesson 3, we'll implement JWT)
     return {"access_token":"fake-jwt-token-for-" + user.username, "token_type": "bearer"}
