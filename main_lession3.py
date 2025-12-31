@@ -3,14 +3,12 @@
 from typing import List, Optional
 from fastapi import FastAPI,HTTPException,Depends, status
 from pydantic import BaseModel, constr, Field, EmailStr  # <-- added EmailStr
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, Text, text, ForeignKey
-from sqlalchemy.orm import sessionmaker, declarative_base, Session, relationship
-from datetime  import datetime, timedelta
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, Text, text
+from sqlalchemy.orm import sessionmaker, declarative_base, Session
+from datetime  import datetime
 import os
 from dotenv import load_dotenv, find_dotenv
 from passlib.context import CryptContext
-from jose import jwt, JWTError
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 
 #load .env file if present
 env_path = find_dotenv() or ".env"
@@ -18,26 +16,6 @@ load_dotenv(env_path)
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./test.db")
 print("Using DATABASE_URL:", DATABASE_URL)
-####################################################
-#JET settings (for JWT token generation)
-################################################
-SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-change-me")
-ALGORITHM = os.getenv("ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
-
-#create access token function
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta if expires_delta else timedelta(minutes= ACCESS_TOKEN_EXPIRE_MINUTES))
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
-
-
-
-
 #Database setup
 # For sqlite disable same thread check for multithreading
 engine= create_engine(
@@ -151,9 +129,6 @@ class Task(Base):
     created_at= Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at= Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
-    # Foreign key to User to link tasks to their owners
-    owner_id= Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    owner= relationship("User", backref="tasks")
 ####################################################################
 #pydantic schemas for Task
 # what are pydantic schemas
@@ -185,7 +160,6 @@ class TaskResponse(BaseModel):
     due_date: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
-    owner_id: int
 
      # Pydantic v2: allow creating model from ORM objects / attributes
     model_config = {"from_attributes": True}
@@ -240,26 +214,7 @@ def get_db():
     finally:
         db.close()
 
-####################################################################
-#get current user from token function
-#get current user from token
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str | None = payload.get("sub")
-        if username is None:
-            raise credentials_exception
-    except JWTError:
-        raise credentials_exception
-    user = get_user_by_username(db, username)
-    if user is None:
-        raise credentials_exception
-    return user
+
 ####################################################################
 #FastAPI app and middlewares
 ######################################################################
@@ -368,13 +323,12 @@ def register_user(user_in: UserCreate, db: Session = Depends(get_db)):
 
 # Login user
 @app.post("/auth/login", response_model= UserLoginResponse,summary="Login and obtain access token")
-def login_user(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    user= get_user_by_username(db, form_data.username)
-    if not user or not verify_password(form_data.password, user.hashed_password):
+def login_user(user_in: UserLogin, db: Session = Depends(get_db)):
+    user= get_user_by_username(db, user_in.username)
+    if not user or not verify_password(user_in.password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
-    
-    access_token = create_access_token(data={"sub": user.username})
-    return {"access_token":access_token, "token_type": "bearer"}
+    # Return a placeholder token (in Lesson 3, we'll implement JWT)
+    return {"access_token":"fake-jwt-token-for-" + user.username, "token_type": "bearer"}
 
 
 ####################################################################
@@ -382,12 +336,11 @@ def login_user(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = D
 #####################################################################
 # Create Task
 @app.post("/tasks/", response_model=TaskResponse, status_code=status.HTTP_201_CREATED, summary="Create a new task")
-def create_task(task_in: TaskCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def create_task(task_in: TaskCreate, db: Session = Depends(get_db)):
     task = Task(
         title= task_in.title,
         description= task_in.description,
-        due_date= task_in.due_date,
-        owner_id= current_user.id
+        due_date= task_in.due_date
     )
 
     db.add(task)
@@ -397,8 +350,8 @@ def create_task(task_in: TaskCreate, db: Session = Depends(get_db), current_user
 
 #get list of tasks
 @app.get("/tasks/",response_model=TaskListResponse, summary="Get a list of tasks")
-def get_tasks(skip: int = 0, limit: int = 10, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    q = db.query(Task).filter(Task.owner_id == current_user.id)
+def get_tasks(skip: int = 0, limit: int = 10, db: Session = Depends(get_db)):
+    q = db.query(Task)
     total = q.count()
     tasks = q.order_by(Task.created_at.desc()).offset(skip).limit(limit).all()
 
@@ -406,16 +359,16 @@ def get_tasks(skip: int = 0, limit: int = 10, db: Session = Depends(get_db), cur
 
 #get task by id
 @app.get("/tasks/{task_id}", response_model=TaskResponse, summary="Get a task by ID")
-def get_task(task_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    task= db.query(Task).filter(Task.id == task_id, Task.owner_id == current_user.id).first()
+def get_task(task_id: int, db: Session = Depends(get_db)):
+    task= db.query(Task).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     return task
 
 #update a task
 @app.post("/tasks/{task_id}", response_model=TaskResponse, summary="Update a task by ID")
-def update_task(task_id: int, task_update: TaskUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    task= db.query(Task).filter(Task.id ==task_id, Task.owner_id == current_user.id).first()
+def update_task(task_id: int, task_update: TaskUpdate, db: Session = Depends(get_db)):
+    task= db.query(Task).filter(Task.id ==task_id).first()
     if not task:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found") 
     for var, value in vars(task_update).items():
@@ -428,8 +381,8 @@ def update_task(task_id: int, task_update: TaskUpdate, db: Session = Depends(get
 
 #delete a task
 @app.delete("/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a task by ID")
-def delete_task(task_id : int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    task= db.query(Task).filter(Task.id == task_id, Task.owner_id == current_user.id).first()
+def delete_task(task_id : int, db: Session = Depends(get_db)):
+    task= db.query(Task).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     db.delete(task)
