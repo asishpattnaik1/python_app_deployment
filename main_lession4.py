@@ -11,9 +11,6 @@ from dotenv import load_dotenv, find_dotenv
 from passlib.context import CryptContext
 from jose import jwt, JWTError
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from enum import Enum as PyEnum
-from sqlalchemy import Enum as SAEnum
-
 
 #load .env file if present
 env_path = find_dotenv() or ".env"
@@ -142,21 +139,6 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 ####################################################################
-# -------------------------
-# Strict enums for Task (Lesson 6 - improved)
-# -------------------------
-class TaskStatus(PyEnum):
-    TODO = "todo"
-    IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
-
-class TaskPriority(PyEnum):
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-
-####################################################################
-
 
 #Database Models
 class Task(Base):
@@ -172,12 +154,8 @@ class Task(Base):
     # Foreign key to User to link tasks to their owners
     owner_id= Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     owner= relationship("User", backref="tasks")
-
-    # Adding status and priority fields with strict enums
-    status = Column(SAEnum(TaskStatus, name="task_status"), default=TaskStatus.TODO, nullable=False)
-    priority = Column(SAEnum(TaskPriority, name="task_priority"), default=TaskPriority.MEDIUM, nullable=False)
 ####################################################################
-#pydantic schemas for Task uisng Enums
+#pydantic schemas for Task
 # what are pydantic schemas
 #Pydantic schemas are data models defined using the Pydantic library in Python.
 #Pydantic is a data validation and settings management library that uses Python type annotations to define data structures.
@@ -192,16 +170,12 @@ class TaskCreate(BaseModel):
     title: constr(min_length=1, max_length=200)
     description: Optional[constr(max_length=1000)] = None
     due_date: Optional[datetime] = None
-    status: TaskStatus = TaskStatus.TODO
-    priority: TaskPriority = TaskPriority.MEDIUM
 
 class TaskUpdate(BaseModel):
     title: Optional[constr(min_length=1, max_length=200)] = None
     description: Optional[constr(max_length=1000)] = None
     is_completed: Optional[bool] = None
     due_date: Optional[datetime] = None
-    status: Optional[TaskStatus] = None
-    priority: Optional[TaskPriority] = None
 
 class TaskResponse(BaseModel):
     id: int
@@ -212,8 +186,6 @@ class TaskResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     owner_id: int
-    status: TaskStatus
-    priority: TaskPriority
 
      # Pydantic v2: allow creating model from ORM objects / attributes
     model_config = {"from_attributes": True}
@@ -415,9 +387,7 @@ def create_task(task_in: TaskCreate, db: Session = Depends(get_db), current_user
         title= task_in.title,
         description= task_in.description,
         due_date= task_in.due_date,
-        owner_id= current_user.id,
-        status= task_in.status,
-        priority= task_in.priority
+        owner_id= current_user.id
     )
 
     db.add(task)
@@ -448,21 +418,9 @@ def update_task(task_id: int, task_update: TaskUpdate, db: Session = Depends(get
     task= db.query(Task).filter(Task.id ==task_id, Task.owner_id == current_user.id).first()
     if not task:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found") 
-    update_data= task_update.model_dump(exclude_none=True)
-    for key, value in update_data.items():
-        setattr(task, key, value)
-    db.add(task)
-    db.commit()
-    db.refresh(task)
-    return task
-#complete atask endpoint
-@app.post("/tasks/{task_id}/complete", response_model=TaskResponse, summary="Mark a task as completed")
-def complete_task(task_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    task= db.query(Task).filter(Task.id == task_id, Task.owner_id == current_user.id).first()
-    if not task:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
-    task.is_completed = True
-    task.status = TaskStatus.COMPLETED
+    for var, value in vars(task_update).items():
+        if value is not None:
+            setattr(task, var, value)
     db.add(task)
     db.commit()
     db.refresh(task)

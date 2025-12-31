@@ -184,7 +184,7 @@
 8. Q: What operational protections accompany password hashing?  
    A: Use HTTPS, account lockout/backoff, rate limiting, secure password reset, and secrets management for keys/peppers.
 
-## Lesson 4 — JWT auth & per-user tasks
+## Lesson 4 & 5— JWT auth & per-user tasks
 - Implemented JWT creation using `python-jose` (install with `uv add "python-jose[cryptography]"`).
 - Login endpoint uses `OAuth2PasswordRequestForm` so Swagger "Authorize" works.
 - `create_access_token({"sub": user.username})` issues signed token with `exp`.
@@ -248,8 +248,49 @@
 15. Q: Should access tokens be long-lived?  
     A: No — keep access tokens short-lived and use refresh tokens with rotation if needed.
 
-## Lesson 5 — 
 
+## Lesson 6 - Learning (Strict enums, validation, complete endpoint)
+
+- Introduced strict Python Enums for task status & priority (TaskStatus, TaskPriority).
+- Bound SQLAlchemy columns to Python Enums with SAEnum(TaskStatus, name="task_status") so DB and ORM use consistent values.
+- Pydantic models use the same Python Enums (TaskCreate / TaskUpdate / TaskResponse) for type-safe validation and OpenAPI docs.
+- Stronger validation: title uses constr(min_length=1, max_length=200), description length limits, optional fields typed.
+- Use model_dump(exclude_none=True) (Pydantic v2) in update endpoint to apply only provided fields.
+- Added POST /tasks/{task_id}/complete which marks is_completed=True and status=TaskStatus.COMPLETED.
+- Notes on schema changes: adding owner_id / status / priority changes DB schema — run migrations (Alembic) or for quick dev reset remove ./dev.db and restart so create_all() recreates tables.
+- Responses serialize Enum values as strings by default (useful for clients).
+
+Lesson 6 - Flashcards (Q = front, A = back)
+
+1. Q: How do you enforce a fixed set of values for a column?  
+   A: Use a Python Enum + SAEnum(...) on the SQLAlchemy Column.
+
+2. Q: Why use the same Python Enum in Pydantic schemas?  
+   A: Ensures request validation and OpenAPI show allowed values consistently.
+
+3. Q: How do you restrict title length in request data?  
+   A: Use pydantic.constr(min_length=1, max_length=200) in the schema.
+
+4. Q: How to update only provided fields in Pydantic v2?  
+   A: Use model_dump(exclude_none=True) on the update model to get only supplied keys.
+
+5. Q: What does SAEnum(TaskStatus, name="task_status") do?  
+   A: Stores enum values in the DB and binds SQLA column to the Python Enum type.
+
+6. Q: How are Enum values returned in JSON responses?  
+   A: Pydantic serializes Enums to their value (string) by default.
+
+7. Q: What does the /tasks/{id}/complete endpoint change?  
+   A: Sets is_completed = True and status = TaskStatus.COMPLETED, then saves.
+
+8. Q: What must you do after adding new columns in development?  
+   A: Run a DB migration (Alembic) or delete ./dev.db to let create_all recreate tables.
+
+9. Q: Why prefer strict enums over free-form strings?  
+   A: Prevents invalid values, improves client/server contract, and surfaces allowed values in docs.
+
+10. Q: How to ensure enums show allowed values in OpenAPI?  
+    A: Use Python Enums in Pydantic models — FastAPI/OpenAPI will list possible values.
 
 
 
