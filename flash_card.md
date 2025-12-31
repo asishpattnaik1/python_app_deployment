@@ -183,3 +183,261 @@
 
 8. Q: What operational protections accompany password hashing?  
    A: Use HTTPS, account lockout/backoff, rate limiting, secure password reset, and secrets management for keys/peppers.
+
+## Lesson 4 — JWT auth & per-user tasks
+- Implemented JWT creation using `python-jose` (install with `uv add "python-jose[cryptography]"`).
+- Login endpoint uses `OAuth2PasswordRequestForm` so Swagger "Authorize" works.
+- `create_access_token({"sub": user.username})` issues signed token with `exp`.
+- `get_current_user` dependency decodes token and loads user.Protected task endpoints by adding current_user: User = Depends(get_current_user) to create/list/get/update/delete.
+- Tasks model updated with `owner_id` FK and relationship to User.
+- Added owner relationship to Task (owner_id FK → users.id) and filter queries by `Task.owner_id == current_user.id` so users see only their own tasks.
+- All task endpoints require authenticated user and filter by `current_user.id`.
+- To apply owner_id in dev you can remove `dev.db` and restart (create_all will recreate tables), or use Alembic for migrations.
+- Security notes: set a strong SECRET_KEY in env, use HTTPS, short token lifetimes, and consider refresh-token rotation/revocation.
+
+### Quick commands
+- Install jose (in venv): uv add "python-jose[cryptography]"
+- Get a token via swagger: /docs → Authorize (enter username/password)  
+- Or curl (form): curl -X POST -d "username=me" -d "password=secret" http://localhost:8000/auth/login
+- Call protected endpoint: curl -H "Authorization: Bearer <token>" http://localhost:8000/tasks/
+
+## Lesson 4 — JWT auth & per-user tasks (Q / A)
+
+1. Q: Why issue JWTs after login?  
+    A: To provide a stateless bearer token the client can send on subsequent requests.
+
+2. Q: Which package implement JWT used here?  
+    A: python-jose (install with uv add "python-jose[cryptography]").
+
+3. Q: If you accidentally installed package named 'jose', what happens?  
+    A: It can be the wrong old lib (Py2) and cause SyntaxError. Uninstall and install python-jose.
+
+4. Q: What does create_access_token do?  
+    A: Encodes payload (e.g., {"sub": username}) with exp claim into a signed JWT.
+
+5. Q: How does get_current_user work?  
+    A: Decodes JWT, checks signature & claims, grabs username from "sub", loads user from DB, or raises 401.
+
+6. Q: How to make Swagger's Authorize work?  
+    A: Use OAuth2PasswordRequestForm in /auth/login so Swagger can request token using form data.
+
+7. Q: How to protect endpoints with JWT?  
+    A: Add current_user: User = Depends(get_current_user) to route signature.
+
+8. Q: Why were all tasks visible before adding owner_id?  
+    A: Because tasks had no owner relation; authentication alone doesn't filter resources.
+
+9. Q: How to make tasks per-user?  
+    A: Add owner_id FK to Task and filter queries by Task.owner_id == current_user.id.
+
+10. Q: What to do about DB schema change (owner_id) in dev?  
+    A: For quick dev reset remove dev.db and restart; for production use Alembic migrations.
+
+11. Q: What should you store in SECRET_KEY?  
+    A: A strong random secret (not checked into source), stored in env or secret manager.
+
+12. Q: How to call login from CLI so Swagger works too?  
+    A: curl -X POST -d "username=me" -d "password=secret" http://localhost:8000/auth/login
+
+13. Q: How to call protected endpoint with token?  
+    A: curl -H "Authorization: Bearer <token>" http://localhost:8000/tasks/
+
+14. Q: Storage advice for tokens in browser clients?  
+    A: Prefer httpOnly secure cookies; localStorage is vulnerable to XSS.
+
+15. Q: Should access tokens be long-lived?  
+    A: No — keep access tokens short-lived and use refresh tokens with rotation if needed.
+
+## Lesson 5 — 
+
+
+
+
+
+# more flashcards
+# Flashcards & Lesson Notes (expanded Q&A, Lessons 1–4)
+
+Quick navigation
+- Lesson 1 — Core app & DB
+- Lesson 2 — Users & auth scaffold
+- Lesson 3 — Password hashing
+- Lesson 4 — JWT auth & per-user tasks
+- Quick commands & troubleshooting
+
+---
+
+## Lesson 1 — Core app & DB (Q / A)
+
+1. Q: Where are the interactive docs?  
+   A: http://localhost:8000/docs (Swagger) and /redoc.
+
+2. Q: What does SessionLocal = sessionmaker(...) give you?  
+   A: A factory to create new SQLAlchemy Session objects.
+
+3. Q: Why use get_db() as a dependency with yield?  
+   A: One DB session per request and guaranteed cleanup (db.close()).
+
+4. Q: Why set connect_args={"check_same_thread": False} for SQLite?  
+   A: So SQLite works with threads used by Uvicorn in dev.
+
+5. Q: What does Base = declarative_base() do?  
+   A: Creates the base class for ORM models so SQLAlchemy can map classes to tables.
+
+6. Q: What does Base.metadata.create_all(bind=engine) do?  
+   A: Creates DB tables from models if missing (doesn't run migrations).
+
+7. Q: Why use response_model in FastAPI routes?  
+   A: Automatic validation/serialization and OpenAPI docs.
+
+8. Q: How to implement pagination in a list endpoint?  
+   A: Use query.offset(skip).limit(limit).all() and return metadata (total, skip, limit).
+
+9. Q: How to check DB connectivity in an endpoint?  
+   A: db.execute(text("SELECT 1")) wrapped in try/except.
+
+10. Q: What CORS setting is unsafe for production?  
+    A: allow_origins=["*"] combined with allow_credentials=True.
+
+---
+
+## Lesson 2 — Users & auth scaffold (Q / A)
+
+11. Q: Why add helper functions like get_user_by_username()?  
+    A: Keeps route logic thin and centralizes DB lookups for reuse/testing.
+
+12. Q: Which Pydantic field type validates email?  
+    A: EmailStr — requires the email-validator package.
+
+13. Q: What happens if email-validator is missing?  
+    A: ImportError: "email-validator is not installed". Install via pip install "pydantic[email]" or email-validator.
+
+14. Q: Should you ever store plaintext passwords?  
+    A: No — only for early lessons; always replace with hashing in real apps.
+
+15. Q: How to test /auth/register from CLI?  
+    A: curl -X POST -H "Content-Type: application/json" -d '{"email":"a@b.com","username":"me","password":"secret"}' http://localhost:8000/auth/register
+
+16. Q: Why might Swagger's Authorize not work with JSON login?  
+    A: Swagger expects the OAuth2 password grant (form data). Use OAuth2PasswordRequestForm to enable automatic token fetching.
+
+---
+
+## Lesson 3 — Password hashing (Q / A)
+
+17. Q: What library is recommended for password hashing?  
+    A: passlib (with bcrypt or argon2 backends).
+
+18. Q: How to hash a password?  
+    A: pwd_context.hash(password).
+
+19. Q: How to verify a password?  
+    A: pwd_context.verify(plain_password, stored_hash).
+
+20. Q: What does pwd_context.needs_update(hash) do?  
+    A: Detects if a stored hash uses old params/alg or needs rehashing.
+
+21. Q: Is it OK to use multiple schemes like ["argon2","bcrypt"]?  
+    A: Yes — new hashes use the first scheme; verification supports older hashes; use needs_update to migrate.
+
+22. Q: How to verify hashing worked locally?  
+    A: Create a user, inspect DB via sqlite3 to see hash string (starts with $argon2id$ or $2b$), then try login.
+
+23. Q: Command to install passlib + bcrypt in venv?  
+    A: pip install "passlib[bcrypt]"
+
+24. Q: What is a "pepper"?  
+    A: Optional server-side secret added before hashing; stored outside DB (env/secret manager).
+
+---
+
+## Lesson 4 — JWT auth & per-user tasks (Q / A)
+
+25. Q: Why issue JWTs after login?  
+    A: To provide a stateless bearer token the client can send on subsequent requests.
+
+26. Q: Which package implement JWT used here?  
+    A: python-jose (install with pip install "python-jose[cryptography]").
+
+27. Q: If you accidentally installed package named 'jose', what happens?  
+    A: It can be the wrong old lib (Py2) and cause SyntaxError. Uninstall and install python-jose.
+
+28. Q: What does create_access_token do?  
+    A: Encodes payload (e.g., {"sub": username}) with exp claim into a signed JWT.
+
+29. Q: How does get_current_user work?  
+    A: Decodes JWT, checks signature & claims, grabs username from "sub", loads user from DB, or raises 401.
+
+30. Q: How to make Swagger's Authorize work?  
+    A: Use OAuth2PasswordRequestForm in /auth/login so Swagger can request token using form data.
+
+31. Q: How to protect endpoints with JWT?  
+    A: Add current_user: User = Depends(get_current_user) to route signature.
+
+32. Q: Why were all tasks visible before adding owner_id?  
+    A: Because tasks had no owner relation; authentication alone doesn't filter resources.
+
+33. Q: How to make tasks per-user?  
+    A: Add owner_id FK to Task and filter queries by Task.owner_id == current_user.id.
+
+34. Q: What to do about DB schema change (owner_id) in dev?  
+    A: For quick dev reset remove dev.db and restart; for production use Alembic migrations.
+
+35. Q: What should you store in SECRET_KEY?  
+    A: A strong random secret (not checked into source), stored in env or secret manager.
+
+36. Q: How to call login from CLI so Swagger works too?  
+    A: curl -X POST -d "username=me" -d "password=secret" http://localhost:8000/auth/login
+
+37. Q: How to call protected endpoint with token?  
+    A: curl -H "Authorization: Bearer <token>" http://localhost:8000/tasks/
+
+38. Q: Storage advice for tokens in browser clients?  
+    A: Prefer httpOnly secure cookies; localStorage is vulnerable to XSS.
+
+39. Q: Should access tokens be long-lived?  
+    A: No — keep access tokens short-lived and use refresh tokens with rotation if needed.
+
+---
+
+## Quick troubleshooting (Q / A)
+
+40. Q: Why get 405 Method Not Allowed on /auth/register in browser?  
+    A: Route only accepts POST; visiting via browser issues GET.
+
+41. Q: Why Pydantic raised "Config and model_config cannot be used together"?  
+    A: Pydantic v2 disallows defining both class Config and model_config; keep model_config for v2.
+
+42. Q: Why did EmailStr raise ImportError?  
+    A: Missing email-validator package; install pydantic[email] or email-validator.
+
+43. Q: Why was jwt import failing with SyntaxError?  
+    A: Wrong 'jose' package installed; uninstall it and install python-jose[cryptography].
+
+44. Q: How to inspect users/hashes in SQLite?  
+    A: sqlite3 ./dev.db -header -column "SELECT id, username, hashed_password FROM users;"
+
+45. Q: How to rehash on login?  
+    A: After verify, if pwd_context.needs_update(stored_hash): new_hash = pwd_context.hash(plain); save new_hash to DB.
+
+---
+
+## Quick commands (copy-paste)
+
+- Start server:
+  uvicorn main:app --reload --host 0.0.0.0 --port 8000
+
+- Register (JSON):
+  curl -X POST -H "Content-Type: application/json" -d '{"email":"a@b.com","username":"me","password":"secret"}' http://localhost:8000/auth/register
+
+- Login (form for Swagger):
+  curl -X POST -d "username=me" -d "password=secret" http://localhost:8000/auth/login
+
+- Call protected endpoint:
+  curl -H "Authorization: Bearer <token>" http://localhost:8000/tasks/
+
+- Inspect DB:
+  sqlite3 ./dev.db -header -column "SELECT * FROM users;"
+
+- Install libs (venv):
+  pip install "passlib[bcrypt]" "python-jose[cryptography]" "pydantic[email]"
+
